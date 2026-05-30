@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-// Usando o caminho relativo correto partindo de src/app/contexts para src/lib
 import { supabase } from '../../lib/supabase';
 
 interface Team {
@@ -54,7 +53,7 @@ interface AdminContextType {
   addMatch: (match: Omit<Match, 'id'>) => void;
   updateMatch: (id: string, match: Partial<Match>) => void;
   deleteMatch: (id: string) => void;
-  addNews: (news: Omit<News, 'id'>) => void;
+  addNews: (newsItem: Omit<News, 'id'>) => void;
   updateNews: (id: string, news: Partial<News>) => void;
   deleteNews: (id: string) => void;
   addChampion: (champion: Omit<Champion, 'id'>) => void;
@@ -73,26 +72,45 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const [news, setNews] = useState<News[]>([]);
   const [champions, setChampions] = useState<Champion[]>([]);
   
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+  // CORREÇÃO DA SENHA: Busca rigorosamente o estado real do localStorage
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return localStorage.getItem('lzmf_admin_auth') === 'true';
   });
 
-  // Buscar dados
+  // Métodos assíncronos internos de busca mapeando camelCase -> snake_case
   const fetchTeams = async () => {
-    const { data, error } = await supabase.from('teams').select('*').order('name', { ascending: true });
-    if (!error && data) setTeams(data as Team[]);
+    const { data, error } = await supabase
+      .from('teams')
+      .select('*')
+      .order('name', { ascending: true });
+    
+    if (!error && data) {
+      const mapped = data.map((t: any) => ({
+        id: String(t.id),
+        name: t.name,
+        shortName: t.short_name || t.shortName,
+        logo: t.logo,
+        league: t.league,
+        group: t.group
+      }));
+      setTeams(mapped);
+    }
   };
 
   const fetchMatches = async () => {
-    const { data, error } = await supabase.from('games').select('*').order('date', { ascending: true });
+    const { data, error } = await supabase
+      .from('games')
+      .select('*')
+      .order('date', { ascending: true });
+
     if (!error && data) {
       const mapped = data.map((game: any) => ({
-        id: game.id,
+        id: String(game.id),
         league: game.league,
-        homeTeamId: game.homeTeamId,
-        awayTeamId: game.awayTeamId,
-        homeScore: game.homeScore ?? undefined,
-        awayScore: game.awayScore ?? undefined,
+        homeTeamId: game.home_team_id || game.homeTeamId,
+        awayTeamId: game.away_team_id || game.awayTeamId,
+        homeScore: game.home_score !== null ? game.home_score : (game.homeScore ?? undefined),
+        awayScore: game.away_score !== null ? game.away_score : (game.awayScore ?? undefined),
         date: game.date,
         time: game.time,
         venue: game.venue,
@@ -103,15 +121,35 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   };
 
   const fetchNews = async () => {
-    const { data, error } = await supabase.from('news').select('*').order('date', { ascending: false });
-    if (!error && data) setNews(data as News[]);
+    const { data, error } = await supabase
+      .from('news')
+      .select('*')
+      .order('date', { ascending: false });
+
+    if (!error && data) {
+      setNews(data as News[]);
+    }
   };
 
   const fetchChampions = async () => {
-    const { data, error } = await supabase.from('champions').select('*').order('year', { ascending: false });
-    if (!error && data) setChampions(data as Champion[]);
+    const { data, error } = await supabase
+      .from('champions')
+      .select('*')
+      .order('year', { ascending: false });
+
+    if (!error && data) {
+      const mapped = data.map((c: any) => ({
+        id: String(c.id),
+        year: c.year,
+        teamName: c.team_name || c.teamName,
+        league: c.league,
+        logo: c.logo
+      }));
+      setChampions(mapped);
+    }
   };
 
+  // Carrega os dados vindos do banco de dados na inicialização
   useEffect(() => {
     fetchTeams();
     fetchMatches();
@@ -119,58 +157,131 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     fetchChampions();
   }, []);
 
-  // OPERAÇÕES TEAMS
+  // OPERAÇÕES: TEAMS
   const addTeam = (team: Omit<Team, 'id'>) => {
-    supabase.from('teams').insert([team]).then(() => fetchTeams());
+    const payload = {
+      name: team.name,
+      short_name: team.shortName,
+      logo: team.logo,
+      league: team.league,
+      group: team.group
+    };
+    supabase.from('teams').insert([payload]).then(() => {
+      fetchTeams();
+    });
   };
 
   const updateTeam = (id: string, updatedTeam: Partial<Team>) => {
-    supabase.from('teams').update(updatedTeam).eq('id', id).then(() => fetchTeams());
+    const payload: any = {};
+    if (updatedTeam.name !== undefined) payload.name = updatedTeam.name;
+    if (updatedTeam.shortName !== undefined) payload.short_name = updatedTeam.shortName;
+    if (updatedTeam.logo !== undefined) payload.logo = updatedTeam.logo;
+    if (updatedTeam.league !== undefined) payload.league = updatedTeam.league;
+    if (updatedTeam.group !== undefined) payload.group = updatedTeam.group;
+
+    supabase.from('teams').update(payload).eq('id', id).then(() => {
+      fetchTeams();
+    });
   };
 
   const deleteTeam = (id: string) => {
-    supabase.from('teams').delete().eq('id', id).then(() => fetchTeams());
+    supabase.from('teams').delete().eq('id', id).then(() => {
+      fetchTeams();
+    });
   };
 
-  // OPERAÇÕES MATCHES (GAMES)
+  // OPERAÇÕES: MATCHES (Tabela 'games')
   const addMatch = (match: Omit<Match, 'id'>) => {
-    supabase.from('games').insert([match]).then(() => fetchMatches());
+    const payload = {
+      league: match.league,
+      home_team_id: match.homeTeamId,
+      away_team_id: match.awayTeamId,
+      home_score: match.homeScore,
+      away_score: match.awayScore,
+      date: match.date,
+      time: match.time,
+      venue: match.venue,
+      status: match.status
+    };
+    supabase.from('games').insert([payload]).then(() => {
+      fetchMatches();
+    });
   };
 
   const updateMatch = (id: string, updatedMatch: Partial<Match>) => {
-    supabase.from('games').update(updatedMatch).eq('id', id).then(() => fetchMatches());
+    const payload: any = {};
+    if (updatedMatch.league !== undefined) payload.league = updatedMatch.league;
+    if (updatedMatch.homeTeamId !== undefined) payload.home_team_id = updatedMatch.homeTeamId;
+    if (updatedMatch.awayTeamId !== undefined) payload.away_team_id = updatedMatch.awayTeamId;
+    if (updatedMatch.homeScore !== undefined) payload.home_score = updatedMatch.homeScore;
+    if (updatedMatch.awayScore !== undefined) payload.away_score = updatedMatch.awayScore;
+    if (updatedMatch.date !== undefined) payload.date = updatedMatch.date;
+    if (updatedMatch.time !== undefined) payload.time = updatedMatch.time;
+    if (updatedMatch.venue !== undefined) payload.venue = updatedMatch.venue;
+    if (updatedMatch.status !== undefined) payload.status = updatedMatch.status;
+
+    supabase.from('games').update(payload).eq('id', id).then(() => {
+      fetchMatches();
+    });
   };
 
   const deleteMatch = (id: string) => {
-    supabase.from('games').delete().eq('id', id).then(() => fetchMatches());
+    supabase.from('games').delete().eq('id', id).then(() => {
+      fetchMatches();
+    });
   };
 
-  // OPERAÇÕES NEWS
+  // OPERAÇÕES: NEWS
   const addNews = (newsItem: Omit<News, 'id'>) => {
-    supabase.from('news').insert([newsItem]).then(() => fetchNews());
+    supabase.from('news').insert([newsItem]).then(() => {
+      fetchNews();
+    });
   };
 
   const updateNews = (id: string, updatedNews: Partial<News>) => {
-    supabase.from('news').update(updatedNews).eq('id', id).then(() => fetchNews());
+    supabase.from('news').update(updatedNews).eq('id', id).then(() => {
+      fetchNews();
+    });
   };
 
   const deleteNews = (id: string) => {
-    supabase.from('news').delete().eq('id', id).then(() => fetchNews());
+    supabase.from('news').delete().eq('id', id).then(() => {
+      fetchNews();
+    });
   };
 
-  // OPERAÇÕES CHAMPIONS
+  // OPERAÇÕES: CHAMPIONS
   const addChampion = (champion: Omit<Champion, 'id'>) => {
-    supabase.from('champions').insert([champion]).then(() => fetchChampions());
+    const payload = {
+      year: champion.year,
+      team_name: champion.teamName,
+      league: champion.league,
+      logo: champion.logo
+    };
+    supabase.from('champions').insert([payload]).then(() => {
+      fetchChampions();
+    });
   };
 
   const updateChampion = (id: string, updatedChampion: Partial<Champion>) => {
-    supabase.from('champions').update(updatedChampion).eq('id', id).then(() => fetchChampions());
+    const payload: any = {};
+    if (updatedChampion.year !== undefined) payload.year = updatedChampion.year;
+    if (updatedChampion.teamName !== undefined) payload.team_name = updatedChampion.teamName;
+    if (updatedChampion.league !== undefined) payload.league = updatedChampion.league;
+    if (updatedChampion.logo !== undefined) payload.logo = updatedChampion.logo;
+
+    supabase.from('champions').update(payload).eq('id', id).then(() => {
+      fetchChampions();
+    });
   };
 
   const deleteChampion = (id: string) => {
-    supabase.from('champions').delete().eq('id', id).then(() => fetchChampions());
+    supabase.from('champions').delete().eq('id', id).then(() => {
+      fetchChampions();
+    });
   };
 
+  // LOGIN & LOGOUT (Autenticação local segura)
   const login = (password: string) => {
     const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD || 'LZMF2019';
     if (password === adminPassword) {
