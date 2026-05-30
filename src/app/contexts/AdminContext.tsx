@@ -1,21 +1,19 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '../../lib/supabase';
 
-// ─── Interfaces TypeScript (camelCase) ────────────────────────────────────────
-
 interface Team {
   id: string;
   name: string;
-  shortName: string;   // → abbreviation no Supabase
-  logo?: string;       // → logo_url no Supabase
+  shortName: string;
+  logo?: string;
   league: 'futsal' | 'campo';
-  group?: string;      // → team_group no Supabase
+  group?: string;
 }
 
 interface Champion {
   id: string;
   year: string;
-  teamName: string;    // → team_name no Supabase (tabela champions, se existir)
+  teamName: string;
   league: 'futsal' | 'campo';
   logo?: string;
 }
@@ -23,28 +21,27 @@ interface Champion {
 interface Match {
   id: string;
   league: 'futsal' | 'campo';
-  homeTeamId: string;  // → home_team_id
-  awayTeamId: string;  // → away_team_id
-  homeScore?: number;  // → home_score
-  awayScore?: number;  // → away_score
-  date: string;        // → game_date
-  time: string;        // → game_time
-  venue: string;       // → location
+  homeTeamId: string;
+  awayTeamId: string;
+  homeScore?: number;
+  awayScore?: number;
+  date: string;
+  time: string;
+  venue: string;
   status: 'scheduled' | 'finished';
+  competition?: string; // → competition no Supabase
 }
 
 interface News {
   id: string;
   title: string;
-  excerpt: string;     // → summary no Supabase
-  image: string;       // → image_url no Supabase
-  date: string;        // → created_at (leitura) / não enviado no insert
+  excerpt: string;
+  image: string;
+  date: string;
   category: string;
-  league: 'futsal' | 'campo' | 'both'; // → display_in no Supabase
+  league: 'futsal' | 'campo' | 'both';
   content?: string;
 }
-
-// ─── Interface pública do contexto (assinaturas void mantidas) ────────────────
 
 interface AdminContextType {
   teams: Team[];
@@ -70,8 +67,6 @@ interface AdminContextType {
 
 const AdminContext = createContext<AdminContextType | undefined>(undefined);
 
-// ─── Funções de mapeamento: Supabase → camelCase ──────────────────────────────
-
 function mapTeam(t: any): Team {
   return {
     id: String(t.id),
@@ -95,6 +90,7 @@ function mapMatch(g: any): Match {
     time: g.game_time ?? '',
     venue: g.location ?? '',
     status: g.status ?? 'scheduled',
+    competition: g.competition ?? undefined,
   };
 }
 
@@ -120,8 +116,6 @@ function mapChampion(c: any): Champion {
     logo: c.logo ?? undefined,
   };
 }
-
-// ─── Funções de mapeamento: camelCase → Supabase (snake_case) ─────────────────
 
 function toTeamPayload(team: Omit<Team, 'id'>) {
   return {
@@ -154,6 +148,7 @@ function toMatchPayload(match: Omit<Match, 'id'>) {
     game_time: match.time,
     location: match.venue,
     status: match.status,
+    competition: match.competition ?? null,
   };
 }
 
@@ -168,6 +163,7 @@ function toMatchUpdatePayload(match: Partial<Match>) {
   if (match.time !== undefined) payload.game_time = match.time;
   if (match.venue !== undefined) payload.location = match.venue;
   if (match.status !== undefined) payload.status = match.status;
+  if (match.competition !== undefined) payload.competition = match.competition;
   return payload;
 }
 
@@ -211,121 +207,55 @@ function toChampionUpdatePayload(champion: Partial<Champion>) {
   return payload;
 }
 
-// ─── Provider ─────────────────────────────────────────────────────────────────
-
 export function AdminProvider({ children }: { children: ReactNode }) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [news, setNews] = useState<News[]>([]);
   const [champions, setChampions] = useState<Champion[]>([]);
 
-  // Autenticação: lê o localStorage de forma rigorosa
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('lzmf_admin_auth') === 'true';
-    } catch {
-      return false;
-    }
+    try { return localStorage.getItem('lzmf_admin_auth') === 'true'; } catch { return false; }
   });
 
-  // ── Fetches internos ──────────────────────────────────────────────────────
-
   const fetchTeams = async () => {
-    const { data, error } = await supabase
-      .from('teams')
-      .select('*')
-      .order('name', { ascending: true });
+    const { data, error } = await supabase.from('teams').select('*').order('name', { ascending: true });
     if (!error && data) setTeams(data.map(mapTeam));
   };
 
   const fetchMatches = async () => {
-    const { data, error } = await supabase
-      .from('games')
-      .select('*')
-      .order('game_date', { ascending: true });
+    const { data, error } = await supabase.from('games').select('*').order('game_date', { ascending: true });
     if (!error && data) setMatches(data.map(mapMatch));
   };
 
   const fetchNews = async () => {
-    const { data, error } = await supabase
-      .from('news')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('news').select('*').order('created_at', { ascending: false });
     if (!error && data) setNews(data.map(mapNews));
   };
 
   const fetchChampions = async () => {
-    const { data, error } = await supabase
-      .from('champions')
-      .select('*')
-      .order('year', { ascending: false });
+    const { data, error } = await supabase.from('champions').select('*').order('year', { ascending: false });
     if (!error && data) setChampions(data.map(mapChampion));
   };
 
   useEffect(() => {
-    fetchTeams();
-    fetchMatches();
-    fetchNews();
-    fetchChampions();
+    fetchTeams(); fetchMatches(); fetchNews(); fetchChampions();
   }, []);
 
-  // ── Teams ──────────────────────────────────────────────────────────────────
+  const addTeam = (team: Omit<Team, 'id'>): void => { supabase.from('teams').insert([toTeamPayload(team)]).then(() => fetchTeams()); };
+  const updateTeam = (id: string, u: Partial<Team>): void => { supabase.from('teams').update(toTeamUpdatePayload(u)).eq('id', id).then(() => fetchTeams()); };
+  const deleteTeam = (id: string): void => { supabase.from('teams').delete().eq('id', id).then(() => fetchTeams()); };
 
-  const addTeam = (team: Omit<Team, 'id'>): void => {
-    supabase.from('teams').insert([toTeamPayload(team)]).then(() => fetchTeams());
-  };
+  const addMatch = (match: Omit<Match, 'id'>): void => { supabase.from('games').insert([toMatchPayload(match)]).then(() => fetchMatches()); };
+  const updateMatch = (id: string, u: Partial<Match>): void => { supabase.from('games').update(toMatchUpdatePayload(u)).eq('id', id).then(() => fetchMatches()); };
+  const deleteMatch = (id: string): void => { supabase.from('games').delete().eq('id', id).then(() => fetchMatches()); };
 
-  const updateTeam = (id: string, updatedTeam: Partial<Team>): void => {
-    supabase.from('teams').update(toTeamUpdatePayload(updatedTeam)).eq('id', id).then(() => fetchTeams());
-  };
+  const addNews = (newsItem: Omit<News, 'id'>): void => { supabase.from('news').insert([toNewsPayload(newsItem)]).then(() => fetchNews()); };
+  const updateNews = (id: string, u: Partial<News>): void => { supabase.from('news').update(toNewsUpdatePayload(u)).eq('id', id).then(() => fetchNews()); };
+  const deleteNews = (id: string): void => { supabase.from('news').delete().eq('id', id).then(() => fetchNews()); };
 
-  const deleteTeam = (id: string): void => {
-    supabase.from('teams').delete().eq('id', id).then(() => fetchTeams());
-  };
-
-  // ── Matches (tabela 'games') ───────────────────────────────────────────────
-
-  const addMatch = (match: Omit<Match, 'id'>): void => {
-    supabase.from('games').insert([toMatchPayload(match)]).then(() => fetchMatches());
-  };
-
-  const updateMatch = (id: string, updatedMatch: Partial<Match>): void => {
-    supabase.from('games').update(toMatchUpdatePayload(updatedMatch)).eq('id', id).then(() => fetchMatches());
-  };
-
-  const deleteMatch = (id: string): void => {
-    supabase.from('games').delete().eq('id', id).then(() => fetchMatches());
-  };
-
-  // ── News ───────────────────────────────────────────────────────────────────
-
-  const addNews = (newsItem: Omit<News, 'id'>): void => {
-    supabase.from('news').insert([toNewsPayload(newsItem)]).then(() => fetchNews());
-  };
-
-  const updateNews = (id: string, updatedNews: Partial<News>): void => {
-    supabase.from('news').update(toNewsUpdatePayload(updatedNews)).eq('id', id).then(() => fetchNews());
-  };
-
-  const deleteNews = (id: string): void => {
-    supabase.from('news').delete().eq('id', id).then(() => fetchNews());
-  };
-
-  // ── Champions ──────────────────────────────────────────────────────────────
-
-  const addChampion = (champion: Omit<Champion, 'id'>): void => {
-    supabase.from('champions').insert([toChampionPayload(champion)]).then(() => fetchChampions());
-  };
-
-  const updateChampion = (id: string, updatedChampion: Partial<Champion>): void => {
-    supabase.from('champions').update(toChampionUpdatePayload(updatedChampion)).eq('id', id).then(() => fetchChampions());
-  };
-
-  const deleteChampion = (id: string): void => {
-    supabase.from('champions').delete().eq('id', id).then(() => fetchChampions());
-  };
-
-  // ── Auth ───────────────────────────────────────────────────────────────────
+  const addChampion = (champion: Omit<Champion, 'id'>): void => { supabase.from('champions').insert([toChampionPayload(champion)]).then(() => fetchChampions()); };
+  const updateChampion = (id: string, u: Partial<Champion>): void => { supabase.from('champions').update(toChampionUpdatePayload(u)).eq('id', id).then(() => fetchChampions()); };
+  const deleteChampion = (id: string): void => { supabase.from('champions').delete().eq('id', id).then(() => fetchChampions()); };
 
   const login = (password: string): boolean => {
     const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD || 'LZMF2019';
@@ -342,32 +272,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     setIsAuthenticated(false);
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
   return (
-    <AdminContext.Provider
-      value={{
-        teams,
-        matches,
-        news,
-        champions,
-        addTeam,
-        updateTeam,
-        deleteTeam,
-        addMatch,
-        updateMatch,
-        deleteMatch,
-        addNews,
-        updateNews,
-        deleteNews,
-        addChampion,
-        updateChampion,
-        deleteChampion,
-        isAuthenticated,
-        login,
-        logout,
-      }}
-    >
+    <AdminContext.Provider value={{
+      teams, matches, news, champions,
+      addTeam, updateTeam, deleteTeam,
+      addMatch, updateMatch, deleteMatch,
+      addNews, updateNews, deleteNews,
+      addChampion, updateChampion, deleteChampion,
+      isAuthenticated, login, logout,
+    }}>
       {children}
     </AdminContext.Provider>
   );
@@ -375,8 +288,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
 export function useAdmin() {
   const context = useContext(AdminContext);
-  if (!context) {
-    throw new Error('useAdmin must be used within AdminProvider');
-  }
+  if (!context) throw new Error('useAdmin must be used within AdminProvider');
   return context;
 }
