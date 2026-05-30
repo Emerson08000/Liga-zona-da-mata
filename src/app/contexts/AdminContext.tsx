@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from '../../lib/supabase';
 
 interface Team {
   id: string;
@@ -46,18 +47,18 @@ interface AdminContextType {
   matches: Match[];
   news: News[];
   champions: Champion[];
-  addTeam: (team: Omit<Team, 'id'>) => void;
-  updateTeam: (id: string, team: Partial<Team>) => void;
-  deleteTeam: (id: string) => void;
-  addMatch: (match: Omit<Match, 'id'>) => void;
-  updateMatch: (id: string, match: Partial<Match>) => void;
-  deleteMatch: (id: string) => void;
-  addNews: (news: Omit<News, 'id'>) => void;
-  updateNews: (id: string, news: Partial<News>) => void;
-  deleteNews: (id: string) => void;
-  addChampion: (champion: Omit<Champion, 'id'>) => void;
-  updateChampion: (id: string, champion: Partial<Champion>) => void;
-  deleteChampion: (id: string) => void;
+  addTeam: (team: Omit<Team, 'id'>) => Promise<void>;
+  updateTeam: (id: string, team: Partial<Team>) => Promise<void>;
+  deleteTeam: (id: string) => Promise<void>;
+  addMatch: (match: Omit<Match, 'id'>) => Promise<void>;
+  updateMatch: (id: string, match: Partial<Match>) => Promise<void>;
+  deleteMatch: (id: string) => Promise<void>;
+  addNews: (news: Omit<News, 'id'>) => Promise<void>;
+  updateNews: (id: string, news: Partial<News>) => Promise<void>;
+  deleteNews: (id: string) => Promise<void>;
+  addChampion: (champion: Omit<Champion, 'id'>) => Promise<void>;
+  updateChampion: (id: string, champion: Partial<Champion>) => Promise<void>;
+  deleteChampion: (id: string) => Promise<void>;
   isAuthenticated: boolean;
   login: (password: string) => boolean;
   logout: () => void;
@@ -66,98 +67,158 @@ interface AdminContextType {
 const AdminContext = createContext<AdminContextType | undefined>(undefined);
 
 export function AdminProvider({ children }: { children: ReactNode }) {
-  const [teams, setTeams] = useState<Team[]>(() => {
-    const saved = localStorage.getItem('lzmf_teams');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [matches, setMatches] = useState<Match[]>(() => {
-    const saved = localStorage.getItem('lzmf_matches');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [news, setNews] = useState<News[]>(() => {
-    const saved = localStorage.getItem('lzmf_news');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [champions, setChampions] = useState<Champion[]>(() => {
-    const saved = localStorage.getItem('lzmf_champions');
-    return saved ? JSON.parse(saved) : [];
-  });
-
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [news, setNews] = useState<News[]>([]);
+  const [champions, setChampions] = useState<Champion[]>([]);
+  
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return localStorage.getItem('lzmf_admin_auth') === 'true';
   });
 
+  // Funções de busca (Fetch)
+  const fetchTeams = async () => {
+    const { data, error } = await supabase
+      .from('teams')
+      .select('*')
+      .order('name', { ascending: true });
+    
+    if (error) console.error('Erro ao buscar times:', error.message);
+    else setTeams(data as Team[] || []);
+  };
+
+  const fetchMatches = async () => {
+    const { data, error } = await supabase
+      .from('games')
+      .select('*')
+      .order('date', { ascending: true })
+      .order('time', { ascending: true });
+
+    if (error) {
+      console.error('Erro ao buscar partidas:', error.message);
+    } else if (data) {
+      // Mapeamento caso o banco retorne null para scores opcionais, garantindo compatibilidade com o tipo Match
+      const mappedMatches: Match[] = data.map((game: any) => ({
+        id: game.id,
+        league: game.league,
+        homeTeamId: game.homeTeamId,
+        awayTeamId: game.awayTeamId,
+        homeScore: game.homeScore ?? undefined,
+        awayScore: game.awayScore ?? undefined,
+        date: game.date,
+        time: game.time,
+        venue: game.venue,
+        status: game.status,
+      }));
+      setMatches(mappedMatches);
+    }
+  };
+
+  const fetchNews = async () => {
+    const { data, error } = await supabase
+      .from('news')
+      .select('*')
+      .order('date', { ascending: false });
+
+    if (error) console.error('Erro ao buscar notícias:', error.message);
+    else setNews(data as News[] || []);
+  };
+
+  const fetchChampions = async () => {
+    const { data, error } = await supabase
+      .from('champions')
+      .select('*')
+      .order('year', { ascending: false });
+
+    if (error) console.error('Erro ao buscar campeões:', error.message);
+    else setChampions(data as Champion[] || []);
+  };
+
+  // Carrega todos os dados ao iniciar o Provider
   useEffect(() => {
-    localStorage.setItem('lzmf_teams', JSON.stringify(teams));
-  }, [teams]);
+    fetchTeams();
+    fetchMatches();
+    fetchNews();
+    fetchChampions();
+  }, []);
 
-  useEffect(() => {
-    localStorage.setItem('lzmf_matches', JSON.stringify(matches));
-  }, [matches]);
-
-  useEffect(() => {
-    localStorage.setItem('lzmf_news', JSON.stringify(news));
-  }, [news]);
-
-  useEffect(() => {
-    localStorage.setItem('lzmf_champions', JSON.stringify(champions));
-  }, [champions]);
-
-  const addTeam = (team: Omit<Team, 'id'>) => {
-    const newTeam = { ...team, id: Date.now().toString() };
-    setTeams([...teams, newTeam]);
+  // OPERAÇÕES: TEAMS
+  const addTeam = async (team: Omit<Team, 'id'>) => {
+    const { error } = await supabase.from('teams').insert([team]);
+    if (error) console.error('Erro ao adicionar time:', error.message);
+    else await fetchTeams();
   };
 
-  const updateTeam = (id: string, updatedTeam: Partial<Team>) => {
-    setTeams(teams.map(team => team.id === id ? { ...team, ...updatedTeam } : team));
+  const updateTeam = async (id: string, updatedTeam: Partial<Team>) => {
+    const { error } = await supabase.from('teams').update(updatedTeam).eq('id', id);
+    if (error) console.error('Erro ao atualizar time:', error.message);
+    else await fetchTeams();
   };
 
-  const deleteTeam = (id: string) => {
-    setTeams(teams.filter(team => team.id !== id));
+  const deleteTeam = async (id: string) => {
+    const { error } = await supabase.from('teams').delete().eq('id', id);
+    if (error) console.error('Erro ao deletar time:', error.message);
+    else await fetchTeams();
   };
 
-  const addMatch = (match: Omit<Match, 'id'>) => {
-    const newMatch = { ...match, id: Date.now().toString() };
-    setMatches([...matches, newMatch]);
+  // OPERAÇÕES: MATCHES (Tabela 'games')
+  const addMatch = async (match: Omit<Match, 'id'>) => {
+    const { error } = await supabase.from('games').insert([match]);
+    if (error) console.error('Erro ao adicionar partida:', error.message);
+    else await fetchMatches();
   };
 
-  const updateMatch = (id: string, updatedMatch: Partial<Match>) => {
-    setMatches(matches.map(match => match.id === id ? { ...match, ...updatedMatch } : match));
+  const updateMatch = async (id: string, updatedMatch: Partial<Match>) => {
+    const { error } = await supabase.from('games').update(updatedMatch).eq('id', id);
+    if (error) console.error('Erro ao atualizar partida:', error.message);
+    else await fetchMatches();
   };
 
-  const deleteMatch = (id: string) => {
-    setMatches(matches.filter(match => match.id !== id));
+  const deleteMatch = async (id: string) => {
+    const { error } = await supabase.from('games').delete().eq('id', id);
+    if (error) console.error('Erro ao deletar partida:', error.message);
+    else await fetchMatches();
   };
 
-  const addNews = (newsItem: Omit<News, 'id'>) => {
-    const newNews = { ...newsItem, id: Date.now().toString() };
-    setNews([newNews, ...news]);
+  // OPERAÇÕES: NEWS
+  const addNews = async (newsItem: Omit<News, 'id'>) => {
+    const { error } = await supabase.from('news').insert([newsItem]);
+    if (error) console.error('Erro ao adicionar notícia:', error.message);
+    else await fetchNews();
   };
 
-  const updateNews = (id: string, updatedNews: Partial<News>) => {
-    setNews(news.map(item => item.id === id ? { ...item, ...updatedNews } : item));
+  const updateNews = async (id: string, updatedNews: Partial<News>) => {
+    const { error } = await supabase.from('news').update(updatedNews).eq('id', id);
+    if (error) console.error('Erro ao atualizar notícia:', error.message);
+    else await fetchNews();
   };
 
-  const deleteNews = (id: string) => {
-    setNews(news.filter(item => item.id !== id));
+  const deleteNews = async (id: string) => {
+    const { error } = await supabase.from('news').delete().eq('id', id);
+    if (error) console.error('Erro ao deletar notícia:', error.message);
+    else await fetchNews();
   };
 
-  const addChampion = (champion: Omit<Champion, 'id'>) => {
-    const newChampion = { ...champion, id: Date.now().toString() };
-    setChampions([newChampion, ...champions]);
+  // OPERAÇÕES: CHAMPIONS (Tabela 'champions')
+  const addChampion = async (champion: Omit<Champion, 'id'>) => {
+    const { error } = await supabase.from('champions').insert([champion]);
+    if (error) console.error('Erro ao adicionar campeão:', error.message);
+    else await fetchChampions();
   };
 
-  const updateChampion = (id: string, updatedChampion: Partial<Champion>) => {
-    setChampions(champions.map(item => item.id === id ? { ...item, ...updatedChampion } : item));
+  const updateChampion = async (id: string, updatedChampion: Partial<Champion>) => {
+    const { error } = await supabase.from('champions').update(updatedChampion).eq('id', id);
+    if (error) console.error('Erro ao atualizar campeão:', error.message);
+    else await fetchChampions();
   };
 
-  const deleteChampion = (id: string) => {
-    setChampions(champions.filter(item => item.id !== id));
+  const deleteChampion = async (id: string) => {
+    const { error } = await supabase.from('champions').delete().eq('id', id);
+    if (error) console.error('Erro ao deletar campeão:', error.message);
+    else await fetchChampions();
   };
 
+  // AUTENTICAÇÃO (Mantida localmente conforme solicitado)
   const login = (password: string) => {
     const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD || 'LZMF2019';
     if (password === adminPassword) {
