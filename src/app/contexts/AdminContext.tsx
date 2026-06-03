@@ -62,6 +62,24 @@ export interface News {
   content?: string;
 }
 
+// ─── NOVO: Competição com grupos ────────────────────────────────────────────
+export interface Competition {
+  id: string;
+  name: string;
+  league: 'futsal' | 'campo';
+  season: string;          // ex: "2026"
+  groups: CompetitionGroup[];
+}
+
+export interface CompetitionGroup {
+  id: string;
+  competitionId: string;
+  name: string;            // ex: "A", "B", "Sub-15"
+  teamIds: string[];
+  advanceSpots: number;    // quantos times se classificam
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 interface AdminContextType {
   teams: Team[];
   matches: Match[];
@@ -69,6 +87,7 @@ interface AdminContextType {
   champions: Champion[];
   players: Player[];
   gameEvents: GameEvent[];
+  competitions: Competition[];
   addTeam: (team: Omit<Team, 'id'>) => void;
   updateTeam: (id: string, team: Partial<Team>) => void;
   deleteTeam: (id: string) => void;
@@ -86,6 +105,9 @@ interface AdminContextType {
   deletePlayer: (id: string) => void;
   addGameEvent: (event: Omit<GameEvent, 'id'>) => void;
   deleteGameEvent: (id: string) => void;
+  addCompetition: (comp: Omit<Competition, 'id'>) => void;
+  updateCompetition: (id: string, comp: Partial<Competition>) => void;
+  deleteCompetition: (id: string) => void;
   isAuthenticated: boolean;
   login: (password: string) => boolean;
   logout: () => void;
@@ -192,6 +214,22 @@ function toGameEventPayload(e: Omit<GameEvent, 'id'>) {
   return { game_id: e.gameId, type: e.type, team_id: e.teamId, player_name: e.playerName, minute: e.minute ?? null };
 }
 
+// ─── Competitions são salvas em localStorage (sem tabela Supabase necessária) ─
+const STORAGE_KEY = 'lzmf_competitions';
+
+function loadCompetitions(): Competition[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveCompetitions(comps: Competition[]) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(comps)); } catch {}
+}
+
+function genId() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+
 export function AdminProvider({ children }: { children: ReactNode }) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -199,6 +237,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const [champions, setChampions] = useState<Champion[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [gameEvents, setGameEvents] = useState<GameEvent[]>([]);
+  const [competitions, setCompetitions] = useState<Competition[]>(loadCompetitions);
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try { return localStorage.getItem('lzmf_admin_auth') === 'true'; } catch { return false; }
@@ -236,6 +275,28 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const addGameEvent = (e: Omit<GameEvent, 'id'>): void => { supabase.from('game_events').insert([toGameEventPayload(e)]).then(() => fetchGameEvents()); };
   const deleteGameEvent = (id: string): void => { supabase.from('game_events').delete().eq('id', id).then(() => fetchGameEvents()); };
 
+  // ─── Competitions (localStorage) ────────────────────────────────────────
+  const addCompetition = (comp: Omit<Competition, 'id'>) => {
+    const newComp: Competition = { ...comp, id: genId(), groups: comp.groups.map(g => ({ ...g, id: genId(), competitionId: '' })) };
+    newComp.groups = newComp.groups.map(g => ({ ...g, competitionId: newComp.id }));
+    const updated = [...competitions, newComp];
+    setCompetitions(updated);
+    saveCompetitions(updated);
+  };
+
+  const updateCompetition = (id: string, comp: Partial<Competition>) => {
+    const updated = competitions.map(c => c.id === id ? { ...c, ...comp } : c);
+    setCompetitions(updated);
+    saveCompetitions(updated);
+  };
+
+  const deleteCompetition = (id: string) => {
+    const updated = competitions.filter(c => c.id !== id);
+    setCompetitions(updated);
+    saveCompetitions(updated);
+  };
+  // ────────────────────────────────────────────────────────────────────────
+
   const login = (password: string): boolean => {
     const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD || 'LZMF2019';
     if (password === adminPassword) { localStorage.setItem('lzmf_admin_auth', 'true'); setIsAuthenticated(true); return true; }
@@ -245,13 +306,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
   return (
     <AdminContext.Provider value={{
-      teams, matches, news, champions, players, gameEvents,
+      teams, matches, news, champions, players, gameEvents, competitions,
       addTeam, updateTeam, deleteTeam,
       addMatch, updateMatch, deleteMatch,
       addNews, updateNews, deleteNews,
       addChampion, updateChampion, deleteChampion,
       addPlayer, updatePlayer, deletePlayer,
       addGameEvent, deleteGameEvent,
+      addCompetition, updateCompetition, deleteCompetition,
       isAuthenticated, login, logout,
     }}>
       {children}

@@ -6,6 +6,7 @@ import { TeamsManager } from '../components/admin/TeamsManager';
 import { MatchesManager } from '../components/admin/MatchesManager';
 import { NewsManager } from '../components/admin/NewsManager';
 import { ChampionsManager } from '../components/admin/ChampionsManager';
+import { StandingsManager } from '../components/admin/StandingsManager';
 
 export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<'teams' | 'matches' | 'standings' | 'news' | 'champions'>('teams');
@@ -46,15 +47,15 @@ export function AdminDashboard() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-xl shadow-sm mb-6">
-          <div className="flex border-b border-gray-200">
+        <div className="bg-white rounded-xl shadow-sm mb-6 overflow-x-auto">
+          <div className="flex border-b border-gray-200 min-w-max">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-6 py-4 transition-colors ${
+                  className={`flex items-center gap-2 px-6 py-4 transition-colors whitespace-nowrap ${
                     activeTab === tab.id
                       ? 'border-b-2 border-[#0f4c2e] text-[#0f4c2e]'
                       : 'text-gray-600 hover:text-gray-900'
@@ -71,13 +72,7 @@ export function AdminDashboard() {
         <div className="bg-white rounded-xl shadow-sm p-6">
           {activeTab === 'teams' && <TeamsManager />}
           {activeTab === 'matches' && <MatchesManager />}
-          {activeTab === 'standings' && (
-            <div className="text-center py-12 text-gray-500">
-              <Trophy className="w-16 h-16 mx-auto mb-4 opacity-30" />
-              <p>A classificação por grupos é gerada automaticamente</p>
-              <p className="text-sm mt-2">Configure os grupos ao adicionar/editar times</p>
-            </div>
-          )}
+          {activeTab === 'standings' && <StandingsManager />}
           {activeTab === 'news' && <NewsManager />}
           {activeTab === 'champions' && <ChampionsManager />}
         </div>
