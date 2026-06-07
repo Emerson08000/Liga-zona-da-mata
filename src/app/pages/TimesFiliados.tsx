@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
-import logoPoliglotas from '../../imports/logo-poliglotas.png';
+// Use public path for the logo to avoid module resolution issues
+const logoPoliglotas = '/logo-poliglotas.png';
 import { ArrowLeft, Trophy } from 'lucide-react';
 import { Footer } from '../components/Footer';
 import { Header } from '../components/Header';
